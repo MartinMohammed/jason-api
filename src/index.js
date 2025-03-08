@@ -203,17 +203,15 @@ fastify.register(async (fastifyInstance) => {
               },
             };
 
-            const addConversationConfigOverride = (key, value) => {
-              if (value != "undefined") {
-                initialConfig.conversation_config_override.agent[key] = value;
-              }
-            };
+            if (customParameters.first_message) {
+              initialConfig.conversation_config_override.agent.first_message =
+                customParameters.first_message;
+            }
 
-            addConversationConfigOverride("prompt", customParameters.prompt);
-            addConversationConfigOverride(
-              "first_message",
-              customParameters.first_message
-            );
+            if (customParameters.prompt) {
+              initialConfig.conversation_config_override.agent.prompt =
+                customParameters.prompt;
+            }
 
             console.log(initialConfig);
 
