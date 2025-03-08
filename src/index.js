@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import fastifyFormBody from "@fastify/formbody";
 import fastifyWs from "@fastify/websocket";
 import Twilio from "twilio";
-import { getUserInformationBasedOnPhoneNumber } from "./utils.js";
+import { getUserInformationBasedOnUserId } from "./utils.js";
 
 // Load environment variables from .env file
 dotenv.config();
@@ -58,24 +58,39 @@ fastify.all("/twilio/inbound_call", async (request, reply) => {
 });
 
 // Route to initiate outbound calls
-fastify.post("/outbound-call", async (request, reply) => {
-  const { number, prompt, first_message } = request.body;
+fastify.post("/outbound-call/:userId", async (request, reply) => {
+  const { userId } = request.params;
+  const { prompt, first_message } = request.body;
 
-  if (!number) {
-    return reply.code(400).send({ error: "Phone number is required" });
+  if (!userId) {
+    return reply.code(400).send({ error: "User ID is required" });
   }
 
+  const user = await getUserInformationBasedOnUserId(userId);
+  console.log("User information:", user);
+
+  const addQueryParameter = (key, value) => {
+    if (value != "undefined") {
+      return `&${key}=${encodeURIComponent(value)}`;
+    }
+    return "";
+  };
+
+  let url = `https://${request.headers.host}/outbound-call-twiml?`;
+  url += addQueryParameter("prompt", prompt);
+  url += addQueryParameter("first_message", first_message);
+  url += addQueryParameter("phoneNumber", user.phoneNumber);
+  url += addQueryParameter("userName", user.name);
+  url += addQueryParameter("userId", userId);
+  url += addQueryParameter("friendUserIds", user.friendUserIds);
+  console.log("Outbound call URL:", url);
+
   try {
+    console.log("Initiating outbound call");
     const call = await twilioClient.calls.create({
       from: TWILIO_PHONE_NUMBER,
-      to: number,
-      url: `https://${
-        request.headers.host
-      }/outbound-call-twiml?prompt=${encodeURIComponent(
-        prompt
-      )}&first_message=${encodeURIComponent(
-        first_message
-      )}&phoneNumber=${encodeURIComponent(number)}`,
+      to: user.phoneNumber,
+      url,
     });
 
     reply.send({
@@ -97,6 +112,16 @@ fastify.all("/outbound-call-twiml", async (request, reply) => {
   const prompt = request.query.prompt || "";
   const first_message = request.query.first_message || "";
   const phoneNumber = request.query.phoneNumber || "";
+  const userName = request.query.userName || "";
+  const userId = request.query.userId || "";
+  const friendUserIds = request.query.friendUserIds || "";
+  // one line console.log
+  console.log(`prompt: ${prompt}`);
+  console.log(`first_message: ${first_message}`);
+  console.log(`phoneNumber: ${phoneNumber}`);
+  console.log(`userName: ${userName}`);
+  console.log(`userId: ${userId}`);
+
   const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
       <Response>
         <Connect>
@@ -104,6 +129,9 @@ fastify.all("/outbound-call-twiml", async (request, reply) => {
             <Parameter name="prompt" value="${prompt}" />
             <Parameter name="first_message" value="${first_message}" />
             <Parameter name="phoneNumber" value="${phoneNumber}" />
+            <Parameter name="userName" value="${userName}" />
+            <Parameter name="userId" value="${userId}" />
+            <Parameter name="friendUserIds" value="${friendUserIds}" />
           </Stream>
         </Connect>
       </Response>`;
@@ -148,7 +176,6 @@ fastify.register(async (fastifyInstance) => {
       let callSid = null;
       let elevenLabsWs = null;
       let customParameters = null; // Add this to store parameters
-      let user = null;
 
       // Handle WebSocket errors
       ws.on("error", console.error);
@@ -169,7 +196,10 @@ fastify.register(async (fastifyInstance) => {
                 agent: {},
               },
               dynamic_variables: {
-                name: user.name,
+                name: customParameters.userName,
+                phoneNumber: customParameters.phoneNumber,
+                userId: customParameters.userId,
+                friendUserIds: customParameters.friendUserIds,
               },
             };
 
@@ -284,6 +314,14 @@ fastify.register(async (fastifyInstance) => {
         }
       };
 
+      const loadAdditionalInformation = async () => {
+        return new Promise((resolve, reject) => {
+          setTimeout(() => {
+            return resolve(null);
+          }, 1000);
+        });
+      };
+
       // Handle messages from Twilio
       ws.on("message", async (message) => {
         try {
@@ -297,13 +335,11 @@ fastify.register(async (fastifyInstance) => {
               streamSid = msg.start.streamSid;
               callSid = msg.start.callSid;
               customParameters = msg.start.customParameters; // Store parameters
+              console.log("customParameters", customParameters);
 
-              console.log("Get user information");
-              // get the name of the user that corresponds to the number
-              user = await getUserInformationBasedOnPhoneNumber(
-                customParameters.phoneNumber
-              );
-              console.log("User information:", user);
+              console.log("Loading additional information");
+              await loadAdditionalInformation();
+              console.log("Additional information loaded");
 
               console.log(
                 `[Twilio] Stream started - StreamSid: ${streamSid}, CallSid: ${callSid}`
@@ -311,7 +347,9 @@ fastify.register(async (fastifyInstance) => {
               console.log("[Twilio] Start parameters:", customParameters);
 
               // After user information is retrieved, now we can setup ElevenLabs
+              console.log("Setting up ElevenLabs");
               await setupElevenLabs();
+              console.log("ElevenLabs setup complete");
               break;
 
             case "media":
@@ -371,6 +409,29 @@ fastify.register(async (fastifyInstance) => {
 
         elevenLabsWs.on("open", () => {
           console.log("[ElevenLabs] Connected to Conversational AI");
+
+          // dynamic_variables: {
+          //   name: customParameters.userName,
+          //   phoneNumber: customParameters.phoneNumber,
+          //   userId: customParameters.userId,
+          //   friendUserIds: customParameters.friendUserIds,
+          // },
+          // Send initial configuration with prompt and first message containing userFriendIds
+          const initialConfig = {
+            type: "conversation_initiation_client_data",
+            conversation_config_override: {
+              agent: {},
+            },
+            dynamic_variables: {
+              friendUserIds: "2,3",
+              phoneNumber: "+491709004593",
+              userId: "1",
+            },
+          };
+
+          console.log(initialConfig);
+
+          elevenLabsWs.send(JSON.stringify(initialConfig));
         });
 
         elevenLabsWs.on("message", (data) => {
