@@ -422,6 +422,7 @@ fastify.register(async (fastifyInstance) => {
             conversation_config_override: {
               agent: {},
             },
+            // {{friendUserIds}}
             dynamic_variables: {
               friendUserIds: "2,3",
               phoneNumber: "+491709004593",

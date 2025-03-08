@@ -5,7 +5,7 @@ async function getUserInformationBasedOnUserId(userId) {
       // mock api call
       const user = {
         id: userId,
-        name: "Shuti",
+        name: "Son",
         phoneNumber: "+491709004593",
         friendUserIds: "2,3",
       };
@@ -18,7 +18,7 @@ async function getUserInformationBasedOnUserId(userId) {
       // mock api call
       const user = {
         id: userId,
-        name: "Son",
+        name: "Shuti",
         phoneNumber: "+4915229591653",
         friendUserIds: "2",
       };
