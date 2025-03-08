@@ -6,7 +6,8 @@ async function getUserInformationBasedOnUserId(userId) {
       const user = {
         id: userId,
         name: "Son",
-        phoneNumber: "+491709004593",
+        // 4915229591653
+        phoneNumber: "+4915229591653",
         friendUserIds: "2,3",
       };
       // do I need to wait for 1 second?
@@ -19,7 +20,7 @@ async function getUserInformationBasedOnUserId(userId) {
       const user = {
         id: userId,
         name: "Shuti",
-        phoneNumber: "+4915229591653",
+        phoneNumber: "+491709004593",
         friendUserIds: "2",
       };
       setTimeout(() => {
