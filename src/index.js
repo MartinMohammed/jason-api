@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import fastifyFormBody from "@fastify/formbody";
 import fastifyWs from "@fastify/websocket";
 import Twilio from "twilio";
+import { getUserInformationBasedOnPhoneNumber } from "./utils.js";
 
 // Load environment variables from .env file
 dotenv.config();
@@ -72,7 +73,9 @@ fastify.post("/outbound-call", async (request, reply) => {
         request.headers.host
       }/outbound-call-twiml?prompt=${encodeURIComponent(
         prompt
-      )}&first_message=${encodeURIComponent(first_message)}`,
+      )}&first_message=${encodeURIComponent(
+        first_message
+      )}&phoneNumber=${encodeURIComponent(number)}`,
     });
 
     reply.send({
@@ -93,13 +96,14 @@ fastify.post("/outbound-call", async (request, reply) => {
 fastify.all("/outbound-call-twiml", async (request, reply) => {
   const prompt = request.query.prompt || "";
   const first_message = request.query.first_message || "";
-
+  const phoneNumber = request.query.phoneNumber || "";
   const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
       <Response>
         <Connect>
           <Stream url="wss://${request.headers.host}/outbound-media-stream">
             <Parameter name="prompt" value="${prompt}" />
             <Parameter name="first_message" value="${first_message}" />
+            <Parameter name="phoneNumber" value="${phoneNumber}" />
           </Stream>
         </Connect>
       </Response>`;
@@ -144,6 +148,7 @@ fastify.register(async (fastifyInstance) => {
       let callSid = null;
       let elevenLabsWs = null;
       let customParameters = null; // Add this to store parameters
+      let user = null;
 
       // Handle WebSocket errors
       ws.on("error", console.error);
@@ -160,30 +165,25 @@ fastify.register(async (fastifyInstance) => {
             // Send initial configuration with prompt and first message
             const initialConfig = {
               type: "conversation_initiation_client_data",
+              conversation_config_override: {
+                agent: {},
+              },
+              dynamic_variables: {
+                name: user.name,
+              },
             };
 
-            if (customParameters?.prompt != "undefined") {
-              // add conversation_config_override to initialConfig
-              initialConfig.conversation_config_override = {
-                agent: {
-                  // conversation_config_override and agent might be undefined
-                  ...initialConfig.conversation_config_override?.agent,
-                  prompt: {
-                    prompt: customParameters.prompt,
-                  },
-                },
-              };
-            }
+            const addConversationConfigOverride = (key, value) => {
+              if (value != "undefined") {
+                initialConfig.conversation_config_override.agent[key] = value;
+              }
+            };
 
-            // same for first_message
-            if (customParameters?.first_message != "undefined") {
-              initialConfig.conversation_config_override = {
-                agent: {
-                  ...initialConfig.conversation_config_override?.agent,
-                  first_message: customParameters.first_message,
-                },
-              };
-            }
+            addConversationConfigOverride("prompt", customParameters.prompt);
+            addConversationConfigOverride(
+              "first_message",
+              customParameters.first_message
+            );
 
             console.log(initialConfig);
 
@@ -284,11 +284,8 @@ fastify.register(async (fastifyInstance) => {
         }
       };
 
-      // Set up ElevenLabs connection
-      setupElevenLabs();
-
       // Handle messages from Twilio
-      ws.on("message", (message) => {
+      ws.on("message", async (message) => {
         try {
           const msg = JSON.parse(message);
           if (msg.event !== "media") {
@@ -300,10 +297,21 @@ fastify.register(async (fastifyInstance) => {
               streamSid = msg.start.streamSid;
               callSid = msg.start.callSid;
               customParameters = msg.start.customParameters; // Store parameters
+
+              console.log("Get user information");
+              // get the name of the user that corresponds to the number
+              user = await getUserInformationBasedOnPhoneNumber(
+                customParameters.phoneNumber
+              );
+              console.log("User information:", user);
+
               console.log(
                 `[Twilio] Stream started - StreamSid: ${streamSid}, CallSid: ${callSid}`
               );
               console.log("[Twilio] Start parameters:", customParameters);
+
+              // After user information is retrieved, now we can setup ElevenLabs
+              await setupElevenLabs();
               break;
 
             case "media":
