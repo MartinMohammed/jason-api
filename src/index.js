@@ -425,7 +425,6 @@ fastify.register(async (fastifyInstance) => {
             dynamic_variables: {
               friendUserIds: "2,3",
               phoneNumber: "+491709004593",
-              name: "Shuti",
               userId: "1",
             },
           };
